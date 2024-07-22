@@ -1,0 +1,110 @@
+/*This code implements an advanced vulnerability scanner using Python libraries like nmap and requests.
+It scans a target IP or URL for open ports, services, and website vulnerabilities, 
+and checks for outdated Python packages. Results are saved to an output file specified by the user.*/
+
+import nmap
+import requests
+import subprocess
+import json
+import os
+
+def scan_open_ports(target):
+/* Scans all ports (1-65535) on the target IP address to detect open ports.
+   Uses the nmap library for scanning.
+   Returns a list of tuples containing open port numbers and their respective service names.*/
+    nm = nmap.PortScanner()
+    nm.scan(target, '1-65535')  # Scan all ports
+    open_ports = []
+    for host in nm.all_hosts():
+        if 'tcp' in nm[host]:
+            for port in nm[host]['tcp']:
+                if nm[host]['tcp'][port]['state'] == 'open':
+                    open_ports.append((port, nm[host]['tcp'][port]['name']))
+    return open_ports
+
+def scan_services(target):
+    nm = nmap.PortScanner()
+    nm.scan(target, arguments='-sV')  # Service version detection
+    services = []
+    for host in nm.all_hosts():
+        if 'tcp' in nm[host]:
+            for port in nm[host]['tcp']:
+                if nm[host]['tcp'][port]['state'] == 'open':
+                    service = nm[host]['tcp'][port]['name']
+                    version = nm[host]['tcp'][port].get('version', 'unknown')
+                    services.append((port, service, version))
+    return services
+
+def check_outdated_software():
+    result = subprocess.run(['pip', 'list', '--outdated', '--format', 'json'], stdout=subprocess.PIPE)
+    outdated_packages = json.loads(result.stdout.decode('utf-8'))
+    return [(pkg['name'], pkg.get('version', 'unknown'), pkg['latest_version']) for pkg in outdated_packages]
+
+def scan_website_vulnerabilities(url):
+    vulnerabilities = []
+    try:
+        result = subprocess.run(['nikto', '-h', url], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = result.stdout.decode('utf-8')
+        vulnerabilities = output.splitlines()
+    except Exception as e:
+        vulnerabilities.append(f'Error running Nikto: {str(e)}')
+    return vulnerabilities
+
+def scan_website_headers(url):
+    vulnerabilities = []
+    try:
+        response = requests.get(url)
+        if 'X-Frame-Options' not in response.headers:
+            vulnerabilities.append('Missing X-Frame-Options header')
+        if 'X-XSS-Protection' not in response.headers:
+            vulnerabilities.append('Missing X-XSS-Protection header')
+        if 'X-Content-Type-Options' not in response.headers:
+            vulnerabilities.append('Missing X-Content-Type-Options header')
+    except requests.RequestException as e:
+        vulnerabilities.append(f'Error accessing {url}: {str(e)}')
+    return vulnerabilities
+
+def main():
+    print("Advanced Vulnerability Scanner")
+    target = input("Enter target IP or URL: ")
+    output_file = input("Enter the output file name (e.g., output.txt): ")
+    
+    with open(output_file, 'w') as file:
+        if 'http' in target:
+            print(f"Scanning website {target} for vulnerabilities...")
+            file.write(f"Scanning website {target} for vulnerabilities...\n")
+            web_vulnerabilities = scan_website_vulnerabilities(target)
+            header_vulnerabilities = scan_website_headers(target)
+            print("Website Vulnerabilities:")
+            file.write("Website Vulnerabilities:\n")
+            for vuln in web_vulnerabilities + header_vulnerabilities:
+                print(f"- {vuln}")
+                file.write(f"- {vuln}\n")
+        else:
+            print(f"Scanning network {target} for open ports and services...")
+            file.write(f"Scanning network {target} for open ports and services...\n")
+            open_ports = scan_open_ports(target)
+            services = scan_services(target)
+            print("Open Ports:")
+            file.write("Open Ports:\n")
+            for port, service in open_ports:
+                print(f"- Port {port}: {service}")
+                file.write(f"- Port {port}: {service}\n")
+            print("Detected Services:")
+            file.write("Detected Services:\n")
+            for port, service, version in services:
+                print(f"- Port {port}: {service} (version {version})")
+                file.write(f"- Port {port}: {service} (version {version})\n")
+
+        print("Checking for outdated software...")
+        file.write("Checking for outdated software...\n")
+        outdated_software = check_outdated_software()
+        print("Outdated Software:")
+        file.write("Outdated Software:\n")
+        for pkg, current, latest in outdated_software:
+            print(f"- {pkg}: current version {current}, latest version {latest}")
+            file.write(f"- {pkg}: current version {current}, latest version {latest}\n")
+
+if __name__ == "__main__":
+    main()
+
